@@ -1,0 +1,25 @@
+# 忽略消費者上傳的測試目錄、臨時目錄
+uploads/
+user_uploads/
+temp/
+output/
+
+# 忽略所有常見的大型影音媒體格式（這能確保大影片絕對進不去 GitHub）
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.png
+*.jpg
+*.jpeg
+
+# 排除 Python 自動產生的暫存檔
+__pycache__/
+*.pyc
+.streamlit/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.jpg
+*.png
