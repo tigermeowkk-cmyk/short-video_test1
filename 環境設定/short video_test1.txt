@@ -1,5 +1,19 @@
-import streamlit as st
 import os
+
+# ==========================================
+# 0. 針對 Linux / Streamlit Cloud 的環境修正
+# ==========================================
+# 檢查是否在 Linux 環境，並強制指定 ImageMagick 的二進位檔案路徑
+if os.name != 'nt':  # 'nt' 代表 Windows，如果不是 Windows 就是 Linux/Mac
+    os.environ["IMAGEMAGICK_BINARY"] = "/usr/bin/convert"
+    
+    # 某些新版 Linux 的 ImageMagick 限制了安全策略，會禁止 TextClip 渲染文字
+    # 以下指令可以解除 ImageMagick 對於 PDF/TEXT 的讀寫限制
+    os.system("sed -i 's/rights=/"none/" pattern=/"PDF/"/rights=/"read|write/" pattern=/"PDF/"/g' /etc/ImageMagick-6/policy.xml 2>/dev/null")
+
+
+
+import streamlit as st
 import random
 import tempfile
 from moviepy.editor import (
@@ -88,8 +102,8 @@ def generate_saas_video(user_media_paths, style_id, slogan_text, shop_name, logo
 
     # 動態字幕
     if slogan_text:
-        title_clip = TextClip(
-            slogan_text, fontsize=60, color=cfg["text_color"], font=cfg["text_font"],
+        title_clip = TextClip
+            slogan_text, fontsize=60, color=cfg["text_color"], font="./fonts/NotoSansTC-Black.ttf",
             stroke_color=cfg["stroke_color"], stroke_width=cfg["stroke_width"],
             size=(900, None), method='caption'
         ).set_duration(2.5).set_position(cfg["text_pos"])
@@ -112,29 +126,48 @@ def generate_saas_video(user_media_paths, style_id, slogan_text, shop_name, logo
     video_duration = final_video.duration
     audio_clips = []
     
-    # 音樂庫隨機抽選 (雲端若無對應資料夾則跳過)
+    # ==========================================
+    # 音樂庫隨機抽選 (讀取我們剛建好的 bgm 資料夾)
+    # ==========================================
     bgm_dir = f"./bgm/{style_id}"
-    if os.path.exists(bgm_dir) and os.listdir(bgm_dir):
-        songs = [os.path.join(bgm_dir, f) for f in os.listdir(bgm_dir) if f.endswith('.mp3')]
-        selected_bgm = random.choice(songs)
-        bgm_volume = 0.2 if style_id == "viral_vlog" else 0.3
-        bgm_audio = AudioFileClip(selected_bgm).subclip(0, video_duration).volumex(bgm_volume)
-        audio_clips.append(bgm_audio)
     
-    # 載入特效音
+    # 確保資料夾存在
+    if os.path.exists(bgm_dir):
+        # 嚴格過濾，只抓取 .mp3 結尾的檔案
+        songs = [os.path.join(bgm_dir, f) for f in os.listdir(bgm_dir) if f.endswith('.mp3')]
+        
+        # 確保資料夾裡面真的有 mp3 檔案才執行
+        if songs:
+            import random
+            selected_bgm = random.choice(songs)
+            bgm_volume = 0.2 if style_id == "viral_vlog" else 0.3
+            
+            # 使用 audio_loop：音樂不夠長會自動重播補滿，太長會自動截斷
+            from moviepy.audio.fx.all import audio_loop
+            bgm_audio = AudioFileClip(selected_bgm)
+            bgm_audio = audio_loop(bgm_audio, duration=video_duration).volumex(bgm_volume)
+            audio_clips.append(bgm_audio)
+    
+    # ==========================================
+    # 載入特效音 (保持不變)
+    # ==========================================
     for trigger_time, sfx_name in cfg["sfx_pattern"].items():
         sfx_path = f"./assets/{sfx_name}"
         if os.path.exists(sfx_path) and trigger_time < video_duration:
             sfx_audio = AudioFileClip(sfx_path).set_start(trigger_time).volumex(1.0)
             audio_clips.append(sfx_audio)
 
+    # 合併所有音軌到影片中
     if audio_clips:
         final_video = final_video.set_audio(CompositeAudioClip(audio_clips))
 
+    # 確保影片總長不超過 60 秒，避免伺服器超載
     if final_video.duration > 60:
         final_video = final_video.subclip(0, 60)
 
-    # 執行渲染輸出
+    # ==========================================
+    # 執行渲染輸出 (保持不變)
+    # ==========================================
     final_video.write_videofile(
         output_path, fps=24, codec="libx264", audio_codec="aac", threads=2
     )
@@ -144,14 +177,13 @@ def generate_saas_video(user_media_paths, style_id, slogan_text, shop_name, logo
 # ==========================================
 st.set_page_config(page_title="SaaS 短影音自動生成器", layout="centered")
 st.title("🎬 SaaS 短影音自動化行銷平台")
-st.subheader("影音業專屬測試版 ── 一鍵生成你的爆款短影音")
+st.subheader("影音業專專屬測試版 ── 一鍵生成你的爆款短影音")
 
-# 介面輸入區
+# 介面輸入區（保持不變）
 style_choice = st.selectbox(
     "步驟 1：選擇視聽風格模板", 
     ["微電影工作室（沉穩高質感）", "極速網紅自媒體（快節奏重口味）", "日系清新小資（高亮通透）"]
 )
-# 將中文字轉回應對的鍵值
 style_id_map = {
     "微電影工作室（沉穩高質感）": "cinematic",
     "極速網紅自媒體（快節奏重口味）": "viral_vlog",
@@ -208,12 +240,13 @@ if st.button("🚀 一鍵生成爆款短影音"):
                     output_path=output_video_path
                 )
                 
-                # 渲染成功，將影片讀入網頁供使用者觀看與下載
+                # 渲染成功，將影片讀入網頁記憶體
                 st.success("🎉 短影音生成成功！請在下方預覽與下載：")
                 with open(output_video_path, "rb") as video_file:
                     video_bytes = video_file.read()
-                    st.video(video_bytes)
                     
+                    # 呈現畫面與下載按鈕
+                    st.video(video_bytes)
                     st.download_button(
                         label="💾 下載生成的短影音",
                         data=video_bytes,
@@ -223,3 +256,8 @@ if st.button("🚀 一鍵生成爆款短影音"):
             except Exception as e:
                 st.error(f"❌ 渲染過程中發生錯誤：{e}")
                 st.info("提示：如果遇到中文字型問題，請確保雲端環境已正確載入中文字型。")
+            
+            # === 【關鍵優化】在這裡手動觸發 Python 垃圾回收機制釋放記憶體 ===
+            finally:
+                import gc
+                gc.collect()  # 強制清理剛才解散的臨時檔案與視訊殘留記憶體
